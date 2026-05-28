@@ -206,7 +206,11 @@ function buildNinebox(el,rel){
   layout.forEach(row=>{row.forEach(c=>{
     var emps=cells[c]||[];
     html+=`<div class="nb-cell cell-color-${c}">
-      <div class="nb-cell-label" style="color:${cellColors[c]}">${cellNames[c]} (${emps.length})</div>
+      <div class="nb-cell-label" style="color:${cellColors[c]}">${cellNames[c]}</div>
+      <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:5px">
+        <span style="font-size:18px;font-weight:700;color:${cellColors[c]};line-height:1">${emps.length}</span>
+        <span style="font-size:10px;color:${cellColors[c]}99;font-weight:600">${employees.length>0?(emps.length/employees.length*100).toFixed(1)+'%':''}</span>
+      </div>
       <div class="nb-dots">${emps.map(e=>`<div class="nb-dot" style="background:${cellColors[c]}" data-tip="${e.header.name} | P:${pAvg(e).toFixed(2)} Q:${qAvg(e).toFixed(2)} | ${e.header.evaluator}"></div>`).join('')}</div>
     </div>`;
   })});
