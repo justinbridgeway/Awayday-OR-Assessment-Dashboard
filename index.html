@@ -270,29 +270,121 @@ function renderScorecard(){
 /* SALARY */
 function renderSalary(){
   var el=document.getElementById('page-salary');
-  var ws=employees.filter(e=>e.header.salary);
-  var avg=ws.reduce((s,e)=>s+e.header.salary,0)/ws.length;
-  var mx=Math.max(...ws.map(e=>e.header.salary));
-  var mn=Math.min(...ws.map(e=>e.header.salary));
-  el.innerHTML=`<div class="stat-row">
-    <div class="stat"><div class="label">With Salary</div><div class="val blue">${ws.length}</div></div>
-    <div class="stat"><div class="label">Avg Salary</div><div class="val">$${Math.round(avg).toLocaleString()}</div></div>
-    <div class="stat"><div class="label">Highest</div><div class="val green">$${mx.toLocaleString()}</div></div>
-    <div class="stat"><div class="label">Lowest</div><div class="val yellow">$${mn.toLocaleString()}</div></div>
-  </div>
-  <div class="two-col">
-    <div class="panel"><h2>Salary vs Performance</h2><div class="sub">Each dot = one employee</div><div class="chart-wrap"><canvas id="c-sp"></canvas></div></div>
-    <div class="panel"><h2>Salary Distribution</h2><div class="sub">Headcount by salary band</div><div class="chart-wrap"><canvas id="c-sd"></canvas></div></div>
-  </div>
-  <div class="panel"><h2>All Employees — Salary Detail</h2>
-  <table class="tbl"><thead><tr><th>Name</th><th>Pos</th><th>Shop</th><th>Evaluator</th><th>Salary</th><th>Perf</th><th>Pot</th><th>Bonus</th></tr></thead>
-  <tbody>${[...ws].sort((a,b)=>b.header.salary-a.header.salary).map(e=>`<tr><td><strong>${e.header.name}</strong></td><td>${e.header.position||'—'}</td><td>${e.header.shop||'—'}</td><td>${e.header.evaluator}</td><td style="color:var(--green);font-weight:600">$${e.header.salary.toLocaleString()}</td><td>${perfBadge(pAvg(e))}</td><td>${perfBadge(qAvg(e))}</td><td>${bonusBadge(e.scores.bonus)}</td></tr>`).join('')}</tbody>
-  </table></div>`;
-  setTimeout(()=>{
-    mkChart('c-sp',{type:'scatter',data:{datasets:[{data:ws.map(e=>({x:pAvg(e),y:e.header.salary,label:e.header.name})),backgroundColor:'#4f8ef799',borderColor:'#005C83',pointRadius:5,pointHoverRadius:8}]},options:{plugins:{legend:{display:false},tooltip:{callbacks:{label:d=>`${d.raw.label}: $${d.raw.y.toLocaleString()} | Perf:${d.raw.x.toFixed(2)}`}}},scales:{x:{title:{display:true,text:'Performance',color:'#5a8fa3'},ticks:{color:'#5a8fa3'}},y:{title:{display:true,text:'Salary',color:'#5a8fa3'},ticks:{color:'#5a8fa3',callback:v=>'$'+v.toLocaleString()}}},responsive:true,maintainAspectRatio:false}});
+  var ws=employees.filter(function(e){return e.header.salary});
+  var avg=ws.reduce(function(s,e){return s+e.header.salary},0)/ws.length;
+  var mx=Math.max.apply(null,ws.map(function(e){return e.header.salary}));
+  var mn=Math.min.apply(null,ws.map(function(e){return e.header.salary}));
+
+  // 9-box cell groupings for salary correlation
+  var cellGroups={9:[],8:[],7:[],6:[],5:[],4:[],3:[],2:[],1:[]};
+  ws.forEach(function(e){var c=cell9(pAvg(e),qAvg(e));if(cellGroups[c])cellGroups[c].push(e.header.salary)});
+  var cellAvgSal={};
+  [9,8,7,6,5,4,3,2,1].forEach(function(c){
+    var arr=cellGroups[c];
+    cellAvgSal[c]=arr.length>0?Math.round(arr.reduce(function(a,b){return a+b},0)/arr.length):null;
+  });
+
+  // Salary by 9-box cell — bar chart data
+  var cellOrder=[9,8,7,6,5,4,3,2,1];
+  var cellBarLabels=cellOrder.map(function(c){return cellNames[c]});
+  var cellBarData=cellOrder.map(function(c){return cellAvgSal[c]});
+  var cellBarColors=cellOrder.map(function(c){return cellColors[c]+'cc'});
+  var cellBarCounts=cellOrder.map(function(c){return cellGroups[c].length});
+
+  el.innerHTML='<div class="stat-row">'
+    +'<div class="stat"><div class="label">With Salary</div><div class="val blue">'+ws.length+'</div></div>'
+    +'<div class="stat"><div class="label">Avg Salary</div><div class="val">$'+Math.round(avg).toLocaleString()+'</div></div>'
+    +'<div class="stat"><div class="label">Highest</div><div class="val green">$'+mx.toLocaleString()+'</div></div>'
+    +'<div class="stat"><div class="label">Lowest</div><div class="val yellow">$'+mn.toLocaleString()+'</div></div>'
+    +'</div>'
+
+    // 9-box salary correlation panel
+    +'<div class="panel" style="border-left:4px solid #F3CE3C"><h2>9-Box Placement vs Salary</h2>'
+    +'<div class="sub">Average salary by 9-Box cell &mdash; does pay reflect performance and potential?</div>'
+    +'<div class="two-col" style="margin-bottom:0">'
+    +'<div><div class="chart-wrap" style="height:260px"><canvas id="c-9box-sal"></canvas></div></div>'
+    +'<div>'
+    +'<table class="tbl" style="margin-top:8px"><thead><tr><th>9-Box Cell</th><th>n</th><th>Avg Salary</th><th>vs Overall Avg</th></tr></thead>'
+    +'<tbody>'
+    +cellOrder.map(function(c){
+      var avg_c=cellAvgSal[c];
+      var n=cellGroups[c].length;
+      if(!avg_c||n===0)return '<tr><td><span style="color:'+cellColors[c]+';font-weight:600">'+cellNames[c]+'</span></td><td>0</td><td>—</td><td>—</td></tr>';
+      var diff=avg_c-Math.round(avg);
+      var diffStr=(diff>=0?'+':'')+('$'+Math.abs(diff).toLocaleString());
+      var diffColor=diff>=5000?'#00875a':diff<=-5000?'#d0021b':'#5a8fa3';
+      return '<tr>'
+        +'<td><span style="color:'+cellColors[c]+';font-weight:600">'+cellNames[c]+'</span></td>'
+        +'<td>'+n+'</td>'
+        +'<td style="font-weight:600">$'+avg_c.toLocaleString()+'</td>'
+        +'<td style="color:'+diffColor+';font-weight:600">'+(diff>=0?'+':'')+diffStr+'</td>'
+        +'</tr>';
+    }).join('')
+    +'</tbody></table></div></div></div>'
+
+    +'<div class="two-col">'
+    +'<div class="panel"><h2>Salary vs Performance Score</h2><div class="sub">Each dot = one employee &middot; Color = 9-Box cell</div><div class="chart-wrap"><canvas id="c-sp"></canvas></div></div>'
+    +'<div class="panel"><h2>Salary Distribution</h2><div class="sub">Headcount by salary band</div><div class="chart-wrap"><canvas id="c-sd"></canvas></div></div>'
+    +'</div>'
+
+    +'<div class="panel"><h2>All Employees &mdash; Salary Detail</h2>'
+    +'<table class="tbl"><thead><tr><th>Name</th><th>Pos</th><th>Shop</th><th>Evaluator</th><th>Salary</th><th>Perf</th><th>Pot</th><th>Bonus</th><th>9-Box</th></tr></thead>'
+    +'<tbody>'+[...ws].sort(function(a,b){return b.header.salary-a.header.salary}).map(function(e){
+      var c=cell9(pAvg(e),qAvg(e));
+      return '<tr><td><strong>'+e.header.name+'</strong></td><td>'+(e.header.position||'—')+'</td><td>'+(e.header.shop||'—')+'</td><td>'+e.header.evaluator+'</td>'
+        +'<td style="color:#00875a;font-weight:600">$'+e.header.salary.toLocaleString()+'</td>'
+        +'<td>'+perfBadge(pAvg(e))+'</td><td>'+perfBadge(qAvg(e))+'</td><td>'+bonusBadge(e.scores.bonus)+'</td>'
+        +'<td><span style="color:'+cellColors[c]+';font-weight:600">'+c+'&middot;'+cellNames[c]+'</span></td>'
+        +'</tr>';
+    }).join('')+'</tbody></table></div>';
+
+  setTimeout(function(){
+    // 9-box avg salary bar chart
+    var validCells=cellOrder.filter(function(c){return cellAvgSal[c]!==null&&cellGroups[c].length>0});
+    var validLabels=validCells.map(function(c){return cellNames[c]});
+    var validData=validCells.map(function(c){return cellAvgSal[c]});
+    var validColors=validCells.map(function(c){return cellColors[c]+'bb'});
+    var validBorder=validCells.map(function(c){return cellColors[c]});
+    var validCounts=validCells.map(function(c){return cellGroups[c].length});
+    mkChart('c-9box-sal',{type:'bar',data:{labels:validLabels,datasets:[{
+      label:'Avg Salary',data:validData,
+      backgroundColor:validColors,borderColor:validBorder,borderWidth:1.5,borderRadius:5
+    }]},options:{
+      indexAxis:'y',
+      plugins:{legend:{display:false},tooltip:{callbacks:{
+        label:function(ctx){
+          var c=validCells[ctx.dataIndex];
+          return ['Avg: $'+ctx.parsed.x.toLocaleString(),'Employees: '+validCounts[ctx.dataIndex]];
+        }
+      }}},
+      scales:{
+        x:{ticks:{color:'#5a8fa3',callback:function(v){return '$'+v.toLocaleString()}},grid:{color:'#cce0e8'}},
+        y:{ticks:{color:'#003a54',font:{size:11}}}
+      },responsive:true,maintainAspectRatio:false
+    }});
+
+    // Scatter colored by 9-box cell
+    var scDatasets=[9,8,7,6,5,4,3,2,1].filter(function(c){return cellGroups[c].length>0}).map(function(c){
+      return {
+        label:cellNames[c],
+        data:ws.filter(function(e){return cell9(pAvg(e),qAvg(e))===c}).map(function(e){
+          return {x:pAvg(e),y:e.header.salary,label:e.header.name,cell:c};
+        }),
+        backgroundColor:cellColors[c]+'99',borderColor:cellColors[c],pointRadius:5,pointHoverRadius:8
+      };
+    });
+    mkChart('c-sp',{type:'scatter',data:{datasets:scDatasets},options:{
+      plugins:{legend:{position:'right',labels:{color:'#5a8fa3',font:{size:10},boxWidth:10}},
+        tooltip:{callbacks:{label:function(d){return d.raw.label+': $'+d.raw.y.toLocaleString()+' | Score:'+d.raw.x.toFixed(2);}}}},
+      scales:{
+        x:{title:{display:true,text:'Performance Score',color:'#5a8fa3'},ticks:{color:'#5a8fa3'}},
+        y:{title:{display:true,text:'Salary',color:'#5a8fa3'},ticks:{color:'#5a8fa3',callback:function(v){return '$'+v.toLocaleString()}}}
+      },responsive:true,maintainAspectRatio:false
+    }});
+
     var bands=[[0,50000],[50000,55000],[55000,65000],[65000,80000],[80000,100000],[100000,Infinity]];
-    var bLbls=['<$50k','$50–55k','$55–65k','$65–80k','$80–100k','$100k+'];
-    mkChart('c-sd',{type:'bar',data:{labels:bLbls,datasets:[{data:bands.map(b=>ws.filter(e=>e.header.salary>=b[0]&&e.header.salary<b[1]).length),backgroundColor:'#7c5fff99',borderColor:'#F9972B',borderWidth:1,borderRadius:4}]},options:{plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#5a8fa3',font:{size:11}}},y:{ticks:{color:'#5a8fa3',stepSize:1},beginAtZero:true}},responsive:true,maintainAspectRatio:false}});
+    var bLbls=['<$50k','$50-55k','$55-65k','$65-80k','$80-100k','$100k+'];
+    mkChart('c-sd',{type:'bar',data:{labels:bLbls,datasets:[{data:bands.map(function(b){return ws.filter(function(e){return e.header.salary>=b[0]&&e.header.salary<b[1]}).length}),backgroundColor:'#005C8399',borderColor:'#005C83',borderWidth:1,borderRadius:4}]},options:{plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#5a8fa3',font:{size:11}}},y:{ticks:{color:'#5a8fa3',stepSize:1},beginAtZero:true}},responsive:true,maintainAspectRatio:false}});
   },50);
 }
 
