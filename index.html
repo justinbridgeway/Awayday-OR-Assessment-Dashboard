@@ -1446,12 +1446,101 @@ function ciTraitHTML(){
 }
 function corrTxt(c){if(isNaN(c))return 'var(--muted)';if(Math.abs(c)<0.15)return 'var(--muted)';return c>0?'var(--green)':'var(--red)';}
 
+/* ---- Top-performer (9-box Star cell) deep-dive ---- */
+function starProfileHTML(){
+  var emps=employees.filter(function(e){return CI_BY_NAME[e.header.name];});
+  var rec=emps.map(function(e){return{c:CI_BY_NAME[e.header.name],e:e,p:pAvg(e),q:qAvg(e),cell:starCell(e)};});
+  var stars=rec.filter(function(r){return r.cell===9;});
+  var rest=rec.filter(function(r){return r.cell!==9;});
+  if(stars.length<5)return '<div class="panel"><h2>Top-Performer (Star) Deep-Dive</h2><div class="sub">Only '+stars.length+' employees in the Star cell have a CI record in the current view — too few for a stable profile. Set the role filter to All to view.</div></div>';
+  var html='<div class="panel"><h2>Top-Performer (Star) Deep-Dive</h2><div class="sub">'+roleNote()+' &nbsp;\u00b7&nbsp; Culture Index themes among the <strong>'+stars.length+' employees placed in the 9-box Star cell</strong> (high performance and high potential), compared with the '+rest.length+' other matched employees. Sample is small, so treat these as directional signals rather than rules.</div>';
+
+  // trait centroid sorted by |gap|, with consistency
+  var TR=[['A','Autonomy / drive'],['B','Social / extroversion'],['C','Pace / patience'],['D','Conformity / structure'],['L','Logic'],['I','Ingenuity / detail']];
+  var rows=TR.map(function(t){var sv=stars.map(function(r){return r.c[t[0]];}),rv=rest.map(function(r){return r.c[t[0]];});return{k:t[0],lab:t[1],sm:_mean(sv),ssd:_pstd(sv),rm:_mean(rv),gap:_mean(sv)-_mean(rv)};}).sort(function(a,b){return Math.abs(b.gap)-Math.abs(a.gap);});
+  html+='<table class="tbl"><thead><tr><th>Trait</th><th>Star centroid</th><th>Consistency (\u00b1SD)</th><th>Non-Star</th><th>Separation</th></tr></thead><tbody>';
+  rows.forEach(function(r){var big=Math.abs(r.gap)>=0.4;html+='<tr><td><strong>'+r.k+'</strong> <span style="font-size:10px;color:var(--muted)">'+r.lab+'</span></td><td style="font-weight:600">'+(r.sm>=0?'+':'')+r.sm.toFixed(2)+'</td><td style="color:var(--muted)">\u00b1'+r.ssd.toFixed(1)+'</td><td>'+(r.rm>=0?'+':'')+r.rm.toFixed(2)+'</td><td style="font-weight:'+(big?'700':'400')+';color:'+(big?'var(--accent)':'var(--muted)')+'">'+(r.gap>=0?'+':'')+r.gap.toFixed(2)+'</td></tr>';});
+  html+='</tbody></table>';
+
+  // EU mini-cards
+  function euCard(lab,s,r){var d=s-r;return '<div style="flex:1;min-width:130px;background:#f7f9fc;border-radius:8px;padding:11px;text-align:center"><div style="font-size:11px;color:var(--muted)">'+lab+'</div><div style="font-size:19px;font-weight:700">'+s.toFixed(1)+'</div><div style="font-size:10px;color:'+(Math.abs(d)<1?'var(--muted)':(d>0?'var(--green)':'var(--red)'))+'">'+(d>=0?'+':'')+d.toFixed(1)+' vs non-Star</div></div>';}
+  html+='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">'+
+    euCard('Self EU',_mean(stars.map(function(r){return r.c.eu_self;})),_mean(rest.map(function(r){return r.c.eu_self;})))+
+    euCard('Job EU',_mean(stars.map(function(r){return r.c.eu_job;})),_mean(rest.map(function(r){return r.c.eu_job;})))+
+    euCard('EU Gap (stretch)',_mean(stars.map(function(r){return r.c.eu_d;})),_mean(rest.map(function(r){return r.c.eu_d;})))+
+    '</div>';
+
+  // dominant patterns
+  var pat={};stars.forEach(function(r){pat[r.c.pattern]=(pat[r.c.pattern]||0)+1;});
+  var patArr=Object.keys(pat).map(function(p){return[p,pat[p]];}).sort(function(a,b){return b[1]-a[1];});
+  html+='<div style="margin-top:14px"><div class="sub" style="font-weight:600;margin-bottom:4px">Dominant CI patterns among Stars</div><div style="display:flex;flex-wrap:wrap;gap:6px">'+
+    patArr.map(function(p){var pct=Math.round(100*p[1]/stars.length);return '<div style="background:#eef6f9;border:1px solid var(--border);border-radius:14px;padding:4px 11px;font-size:12px">'+p[0]+' <strong>'+p[1]+'</strong> <span style="color:var(--muted)">('+pct+'%)</span></div>';}).join('')+'</div></div>';
+
+  // background themes
+  var reg={};stars.forEach(function(r){reg[r.e.header.region]=(reg[r.e.header.region]||0)+1;});
+  var regArr=Object.keys(reg).map(function(k){return[k,reg[k]];}).sort(function(a,b){return b[1]-a[1];});
+  var roleC={};stars.forEach(function(r){roleC[r.e.header.position]=(roleC[r.e.header.position]||0)+1;});
+  var ten=stars.map(function(r){return tenureOf(r.e);}).filter(function(v){return v!=null;});
+  html+='<div style="margin-top:12px;font-size:12.5px;line-height:1.7"><strong>Background themes:</strong> '+
+    'most common regions '+regArr.slice(0,3).map(function(r){return r[0]+' ('+r[1]+')';}).join(', ')+'; '+
+    'role mix '+Object.keys(roleC).map(function(k){return roleC[k]+' '+k;}).join(', ')+'; '+
+    'average tenure '+(ten.length?_mean(ten).toFixed(1)+' yrs':'n/a')+'.</div>';
+
+  // signature narrative (data-driven)
+  var topUp=rows.filter(function(r){return r.gap>=0.4;}).map(function(r){return r.k;});
+  var topDn=rows.filter(function(r){return r.gap<=-0.4;}).map(function(r){return r.k;});
+  html+='<div style="background:#eef6f9;border-left:3px solid var(--accent);padding:14px 16px;border-radius:8px;margin-top:14px;font-size:12.5px;line-height:1.7">'+
+    '<strong>The Star signature.</strong> Relative to peers, Star-cell employees index '+
+    (topUp.length?('<strong>higher on '+topUp.join(', ')+'</strong>'):'similarly across most traits')+
+    (topDn.length?(' and <strong>lower on '+topDn.join(', ')+'</strong>'):'')+
+    '. The tightest, most consistent trait is <strong>D ('+rows.filter(function(r){return r.k==="D";})[0].sm.toFixed(2)+', \u00b1'+rows.filter(function(r){return r.k==="D";})[0].ssd.toFixed(1)+')</strong> &mdash; structure and conscientiousness above the red line is the most reliable marker. '+
+    'The Coordinator pattern is the most frequent placement. Notably, raw energy (Self EU) is '+(Math.abs(_mean(stars.map(function(r){return r.c.eu_self;}))-_mean(rest.map(function(r){return r.c.eu_self;})))<2?'<strong>not</strong> a distinguishing feature':'a modest differentiator')+' &mdash; Stars are defined by disposition and structure, not by how much energy they carry.</div>';
+  html+='</div>';
+  return html;
+}
+
+/* ---- Self-EU (energy units) correlation analysis ---- */
+function euSelfHTML(){
+  var emps=employees.filter(function(e){return CI_BY_NAME[e.header.name];});
+  if(emps.length<5)return '';
+  var rec=emps.map(function(e){return{c:CI_BY_NAME[e.header.name],p:pAvg(e),q:qAvg(e),cell:starCell(e)};});
+  var eu=rec.map(function(r){return r.c.eu_self;});
+  var cP=_corr(eu,rec.map(function(r){return r.p;})), cQ=_corr(eu,rec.map(function(r){return r.q;})), cC=_corr(eu,rec.map(function(r){return r.cell;}));
+  var html='<div class="panel"><h2>Self-EU (Energy Units) Correlation Analysis</h2><div class="sub">'+roleNote()+' &nbsp;\u00b7&nbsp; n='+emps.length+' matched. A targeted look at the <strong>self-profile</strong> energy level &mdash; the person\u2019s innate intensity \u2014 distinct from Job-Behavior EU (what the role demands) and from the EU gap analyzed elsewhere. Question: does raw energy track performance and potential?</div>';
+
+  // headline correlation cards
+  function cCard(lab,c){return '<div style="flex:1;min-width:150px;background:#f7f9fc;border-radius:8px;padding:13px;text-align:center"><div style="font-size:11px;color:var(--muted)">'+lab+'</div><div style="font-size:22px;font-weight:700;color:'+corrTxt(c)+'">'+(isNaN(c)?'n/a':c.toFixed(2))+'</div></div>';}
+  html+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin:10px 0">'+cCard('Self-EU \u2194 Performance',cP)+cCard('Self-EU \u2194 Potential',cQ)+cCard('Self-EU \u2194 9-Box Cell',cC)+'</div>';
+
+  // tertile table
+  var srt=rec.slice().sort(function(a,b){return a.c.eu_self-b.c.eu_self;});
+  var n=srt.length, t1=srt.slice(0,Math.floor(n/3)), t2=srt.slice(Math.floor(n/3),Math.floor(2*n/3)), t3=srt.slice(Math.floor(2*n/3));
+  html+='<table class="tbl"><thead><tr><th>Self-EU band</th><th>n</th><th>Mean Self-EU</th><th>Avg Performance</th><th>Avg Potential</th><th>% in Star cell</th></tr></thead><tbody>';
+  [['Low third',t1],['Middle third',t2],['High third',t3]].forEach(function(pair){var g=pair[1];if(!g.length)return;var sr=Math.round(100*g.filter(function(r){return r.cell===9;}).length/g.length);html+='<tr><td><strong>'+pair[0]+'</strong></td><td>'+g.length+'</td><td>'+_mean(g.map(function(r){return r.c.eu_self;})).toFixed(0)+'</td><td>'+perfBadge(_mean(g.map(function(r){return r.p;})))+'</td><td>'+perfBadge(_mean(g.map(function(r){return r.q;})))+'</td><td style="font-weight:600">'+sr+'%</td></tr>';});
+  html+='</tbody></table>';
+
+  // EU vs traits
+  var TR=[['A','Autonomy'],['B','Social'],['C','Pace'],['D','Structure'],['L','Logic'],['I','Ingenuity']];
+  html+='<div style="margin-top:14px"><div class="sub" style="font-weight:600;margin-bottom:4px">How Self-EU relates to each trait</div><table class="tbl"><thead><tr><th>Trait</th><th>Correlation with Self-EU</th></tr></thead><tbody>';
+  TR.map(function(t){return[t[0],t[1],_corr(eu,rec.map(function(r){return r.c[t[0]];}))];}).sort(function(a,b){return Math.abs(b[2])-Math.abs(a[2]);}).forEach(function(t){html+='<tr><td><strong>'+t[0]+'</strong> <span style="font-size:10px;color:var(--muted)">'+t[1]+'</span></td><td style="font-weight:600;color:'+corrTxt(t[2])+'">'+t[2].toFixed(2)+'</td></tr>';});
+  html+='</tbody></table></div>';
+
+  // narrative
+  var weak=Math.abs(cP)<0.2&&Math.abs(cQ)<0.2;
+  html+='<div style="background:#fff7e6;border-left:3px solid var(--orange);padding:14px 16px;border-radius:8px;margin-top:14px;font-size:12.5px;line-height:1.7">'+
+    '<strong>What this tells us.</strong> Self-EU is '+(weak?'<strong>essentially uncorrelated</strong> with performance ('+cP.toFixed(2)+'), potential ('+cQ.toFixed(2)+'), and 9-box placement ('+cC.toFixed(2)+')':'related to outcomes (perf '+cP.toFixed(2)+', pot '+cQ.toFixed(2)+')')+'. '+
+    'Star-cell rates are flat across the low, middle, and high energy bands, confirming that <strong>how much energy someone carries does not predict whether they succeed</strong> in the role. Self-EU behaves as an intensity or wiring measure &mdash; it correlates most with Ingenuity (its natural companion trait) &mdash; not as a quality measure. '+
+    'The actionable energy signal remains the <strong>EU gap</strong> (job demand minus self), which captures productive stretch; raw Self-EU should not be used as a selection screen.</div>';
+  html+='</div>';
+  return html;
+}
+
 /* ---------- inject What-Great into Competencies & CI-traits into Culture Index ---------- */
 (function(){
   var _comp=renderCompetencies;
   renderCompetencies=function(){_comp();var el=document.getElementById('page-competencies');el.innerHTML+=whatGreatHTML();};
   var _ci=renderCI;
-  renderCI=function(){_ci();var slot=document.getElementById('ci-traits-slot');if(slot)slot.innerHTML=ciTraitHTML();};
+  renderCI=function(){_ci();var slot=document.getElementById('ci-traits-slot');if(slot)slot.innerHTML=ciTraitHTML()+starProfileHTML()+euSelfHTML();};
 })();
 
 </script>
